@@ -16,25 +16,25 @@ ecr-creds-sync-aws-credentials
 {{- end }}
 
 
-{{- define "bein-service.serviceAccountName" -}}
+{{- define "ecrrenewerjob.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "bein-service.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "ecrrenewerjob.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
 
 
-{{- define "bein-service.labels" -}}
-helm.sh/chart: {{ include "bein-service.chart" . }}
-{{ include "bein-service.selectorLabels" . }}
+{{- define "ecrrenewerjob.labels" -}}
+helm.sh/chart: {{ include "ecrrenewerjob.chart" . }}
+{{ include "ecrrenewerjob.selectorLabels" . }}
 app.kubernetes.io/version: {{ .Values.image.tag | trimall "'" | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 
 
-{{- define "bein-service.fullname" -}}
+{{- define "ecrrenewerjob.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
