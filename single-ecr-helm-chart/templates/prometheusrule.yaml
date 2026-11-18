@@ -1,0 +1,32 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "ecrCronjob.name" . }}
+  namespace: {{ include "namespace" . }}
+  labels:
+    {{- include "ecrCronjob.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: ecr-token-renewer
+      rules:
+        - alert: EcrTokenRenewFailed
+          expr: kube_job_status_failed{namespace={{ include "namespace" . | quote }}, job_name=~{{ printf "%s-job-.+" (include "ecrCronjob.name" .) | quote }}} > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: ECR token renew job is failing
+            description: CronJob {{ include "ecrCronjob.name" . }}-job in {{ include "namespace" . }} has a failed run. Argo CD repository credentials expire 12 hours after the last success.
+        - alert: EcrTokenRenewStale
+          expr: (time() - max(kube_job_status_completion_time{namespace={{ include "namespace" . | quote }}, job_name=~{{ printf "%s-job-.+" (include "ecrCronjob.name" .) | quote }}} and on(namespace, job_name) (kube_job_status_succeeded{namespace={{ include "namespace" . | quote }}, job_name=~{{ printf "%s-job-.+" (include "ecrCronjob.name" .) | quote }}} > 0))) > {{ .Values.monitoring.prometheusRule.staleAfterSeconds }}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: ECR token renew job has not succeeded recently
+            description: CronJob {{ include "ecrCronjob.name" . }}-job in {{ include "namespace" . }} has not succeeded within {{ .Values.monitoring.prometheusRule.staleAfterSeconds }} seconds. The ECR token expires 12 hours after it is issued.
+{{- end }}

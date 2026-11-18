@@ -10,6 +10,16 @@
 {{- default "ecr-creds-sync" .Values.name -}}
 {{- end }}
 
+{{- define "ecrCronjob.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
+{{- end }}
+
+{{- define "ecrCronjob.labels" -}}
+helm.sh/chart: {{ include "ecrCronjob.chart" . }}
+app.kubernetes.io/name: {{ include "ecrCronjob.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
 
 {{- define "ecrCronjob.secretName" -}}
 ecr-creds-sync-aws-credentials

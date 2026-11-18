@@ -11,25 +11,46 @@ kind: CronJob
 metadata:
   name: {{ include "ecrCronjob.name" . }}-job
   namespace: {{ include "namespace" . }}
+  labels:
+    {{- include "ecrCronjob.labels" . | nindent 4 }}
 spec:
   timeZone: {{ .Values.timezone | quote }}
   schedule: {{ .Values.schedule | quote }}
-  successfulJobsHistoryLimit: 3
+  concurrencyPolicy: {{ .Values.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.failedJobsHistoryLimit }}
+  startingDeadlineSeconds: {{ .Values.startingDeadlineSeconds }}
   jobTemplate:
     spec:
+      backoffLimit: {{ .Values.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
       template:
+        metadata:
+          labels:
+            {{- include "ecrCronjob.labels" . | nindent 12 }}
         spec:
           restartPolicy: Never
           serviceAccountName: {{ .Values.serviceAccount.name }}-sa
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
           volumes:
             - name: token
               emptyDir:
                 medium: Memory
+            - name: tmp
+              emptyDir:
+                medium: Memory
           initContainers:
             - name: get-token
-              image: amazon/aws-cli
-              imagePullPolicy: IfNotPresent
+              image: {{ .Values.awsCli.image }}
+              imagePullPolicy: {{ .Values.awsCli.imagePullPolicy }}
+              securityContext:
+                {{- toYaml .Values.awsCli.securityContext | nindent 16 }}
+              resources:
+                {{- toYaml .Values.awsCli.resources | nindent 16 }}
               env:
+                - name: HOME
+                  value: /tmp
                 - name: REGION
                   value: {{ .Values.region | quote }}
                 - name: AWS_ACCESS_KEY_ID
@@ -56,36 +77,46 @@ spec:
               volumeMounts:
                 - name: token
                   mountPath: /token
-
+                - name: tmp
+                  mountPath: /tmp
           containers:
             - name: create-secret
-              image: bitnami/kubectl
-              imagePullPolicy: IfNotPresent
+              image: {{ .Values.kubectl.image }}
+              imagePullPolicy: {{ .Values.kubectl.imagePullPolicy }}
+              securityContext:
+                {{- toYaml .Values.kubectl.securityContext | nindent 16 }}
+              resources:
+                {{- toYaml .Values.kubectl.resources | nindent 16 }}
+              env:
+                - name: HOME
+                  value: /tmp
               command:
                 - /bin/bash
                 - -ce
                 - |
                   test -s /token/ecr-token
-                  cat <<EOF | kubectl apply -f -
-                  {{- range $repo := .Values.repositories }}
-                  apiVersion: v1
-                  kind: Secret
-                  metadata:
-                    name: {{ include "ecrCronjob.repoSecretName" (dict "prefix" (include "ecrCronjob.name" $) "path" $repo.path) }}
-                    namespace: {{ include "namespace" $ }}
-                    labels:
-                      argocd.argoproj.io/secret-type: repository
-                  stringData:
-                    username: AWS
-                    password: $(cat /token/ecr-token)
-                    enableOCI: "true"
-                    name: {{ $repo.name | quote }}
-                    type: helm
-                    url: {{ printf "%s/%s" $.Values.ecrRegistry $repo.path | quote }}
-                  ---
-                  {{- end }}
-                  EOF
-
+                  TOKEN=$(cat /token/ecr-token)
+                  {{ range $repo := .Values.repositories }}
+                  kubectl create secret generic {{ include "ecrCronjob.repoSecretName" (dict "prefix" (include "ecrCronjob.name" $) "path" $repo.path) | quote }} \
+                    --namespace {{ include "namespace" $ | quote }} \
+                    --from-literal=username=AWS \
+                    --from-literal=password="$TOKEN" \
+                    --from-literal=enableOCI=true \
+                    --from-literal={{ printf "name=%s" $repo.name | quote }} \
+                    --from-literal=type=helm \
+                    --from-literal={{ printf "url=%s/%s" $.Values.ecrRegistry $repo.path | quote }} \
+                    --dry-run=client -o yaml \
+                  | kubectl label --local -f - \
+                    argocd.argoproj.io/secret-type=repository \
+                    {{ printf "helm.sh/chart=%s" (include "ecrCronjob.chart" $) | quote }} \
+                    {{ printf "app.kubernetes.io/name=%s" (include "ecrCronjob.name" $) | quote }} \
+                    {{ printf "app.kubernetes.io/instance=%s" $.Release.Name | quote }} \
+                    {{ printf "app.kubernetes.io/managed-by=%s" $.Release.Service | quote }} \
+                    -o yaml \
+                  | kubectl apply -f -
+                  {{ end }}
               volumeMounts:
                 - name: token
                   mountPath: /token
+                - name: tmp
+                  mountPath: /tmp
