@@ -1,0 +1,6 @@
+apiVersion: v2
+name: cross-role-and-many-ecr-token-renewer
+description: Refresh one ECR token into Argo CD Helm OCI secrets for many repositories
+type: application
+version: 0.1.0
+appVersion: "1.0"

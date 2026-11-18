@@ -1,0 +1,28 @@
+
+# Run this cronjob every 45 minutes
+schedule: "*/45 * * * *"
+timezone: Asia/Istanbul
+
+# namespaceOverride: false 
+namespaceOverride: false 
+
+
+# AWS Account credentials to assume the cross-account role
+# MAKE SURE TO PROVIDE THESE FROM THE ARGOCD AND NOT HERE
+aws_access_key_id_base64: "QUtJQVVXRElOWkcz......."
+aws_secret_access_key_base64: "TlI4T................................"
+
+# AWS Accounts and their ECR Registries
+# -> will get the ECR token for each account and save it as a secret
+awsAccounts:
+  - clusterName: "eks-dt-test"
+    region: "eu-west-1"
+    ecrRegistry: "AAAAAAAAAA.dkr.ecr.eu-west-1.amazonaws.com"
+    argocdProject: "default"
+    crossAccountRoleArn: "arn:aws:iam::AAAAAAAAAAA:role/CROSSROLE-IAC-SCM-SR"
+
+  - clusterName: "eks-dt-prod"
+    region: "eu-central-1"
+    ecrRegistry: "BBBBBBBBBBBB.dkr.ecr.eu-west-1.amazonaws.com"
+    argocdProject: "default"
+    crossAccountRoleArn: "arn:aws:iam::BBBBBBBBBBBB:role/CROSSROLE-IAC-SCM-SR"

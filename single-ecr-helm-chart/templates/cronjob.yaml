@@ -1,0 +1,91 @@
+{{- if not .Values.repositories }}
+{{- fail "repositories must contain at least one entry" }}
+{{- end }}
+{{- range .Values.repositories }}
+{{- if or (not .name) (not .path) }}
+{{- fail "each repository needs name and path" }}
+{{- end }}
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "ecrCronjob.name" . }}-job
+  namespace: {{ include "namespace" . }}
+spec:
+  timeZone: {{ .Values.timezone | quote }}
+  schedule: {{ .Values.schedule | quote }}
+  successfulJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ .Values.serviceAccount.name }}-sa
+          volumes:
+            - name: token
+              emptyDir:
+                medium: Memory
+          initContainers:
+            - name: get-token
+              image: amazon/aws-cli
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: REGION
+                  value: {{ .Values.region | quote }}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ecrCronjob.secretName" . }}
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ecrCronjob.secretName" . }}
+                      key: AWS_SECRET_ACCESS_KEY
+              command:
+                - /bin/sh
+                - -ce
+                - |
+                  export AWS_PAGER=
+                  echo "Current identity:"
+                  aws sts get-caller-identity
+
+                  echo "Getting the ECR token and saving it."
+                  aws ecr get-login-password --region "$REGION" > /token/ecr-token
+                  test -s /token/ecr-token
+              volumeMounts:
+                - name: token
+                  mountPath: /token
+
+          containers:
+            - name: create-secret
+              image: bitnami/kubectl
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -ce
+                - |
+                  test -s /token/ecr-token
+                  cat <<EOF | kubectl apply -f -
+                  {{- range $repo := .Values.repositories }}
+                  apiVersion: v1
+                  kind: Secret
+                  metadata:
+                    name: {{ include "ecrCronjob.repoSecretName" (dict "prefix" (include "ecrCronjob.name" $) "path" $repo.path) }}
+                    namespace: {{ include "namespace" $ }}
+                    labels:
+                      argocd.argoproj.io/secret-type: repository
+                  stringData:
+                    username: AWS
+                    password: $(cat /token/ecr-token)
+                    enableOCI: "true"
+                    name: {{ $repo.name | quote }}
+                    type: helm
+                    url: {{ printf "%s/%s" $.Values.ecrRegistry $repo.path | quote }}
+                  ---
+                  {{- end }}
+                  EOF
+
+              volumeMounts:
+                - name: token
+                  mountPath: /token

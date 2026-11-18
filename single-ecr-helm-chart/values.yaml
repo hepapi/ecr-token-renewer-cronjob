@@ -1,0 +1,28 @@
+# Run this cronjob every 45 minutes
+schedule: "*/45 * * * *"
+timezone: Asia/Istanbul
+
+# namespaceOverride: false
+namespaceOverride: false
+
+# Resource name prefix for the CronJob and the Argo CD token Secret.
+name: ecr-creds-sync
+
+# AWS account credentials for the single account that owns the ECR registry.
+# MAKE SURE TO PROVIDE THESE FROM THE ARGOCD AND NOT HERE
+aws_access_key_id_base64: "QUtJQVVXRElOWkcz......."
+aws_secret_access_key_base64: "TlI4T................................"
+
+# Single ECR registry in one AWS account.
+# get-login-password returns one registry token. Each repositories entry
+# becomes its own Argo CD Helm OCI secret at <ecrRegistry>/<path>.
+region: "eu-west-1"
+ecrRegistry: "AAAAAAAAAA.dkr.ecr.eu-west-1.amazonaws.com"
+repositories:
+  - name: "ECR charts"
+    path: charts
+  - name: "ECR app"
+    path: app
+
+serviceAccount:
+  name: ecr-creds-sync

@@ -1,0 +1,99 @@
+{{- range $awsConfig := .Values.awsAccounts }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "ecrCronjob.name" $awsConfig }}-job
+  namespace: {{ include "namespace" $ }}
+spec:
+  timeZone: {{ $.Values.timezone | quote }}
+  schedule: {{ $.Values.schedule | quote }}
+  successfulJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ $.Values.serviceAccount.name }}-sa
+          volumes:
+            - name: token
+              emptyDir:
+                medium: Memory
+          initContainers:
+            - name: get-token
+              image: amazon/aws-cli
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: REGION
+                  value: {{ $awsConfig.region | quote }}
+                - name: ROLE_ARN
+                  value: {{ $awsConfig.crossAccountRoleArn | quote }}
+              command:
+                - /bin/sh
+                - -ce
+                - |
+                  export AWS_PAGER=
+                  echo "Current identity:"
+                  aws sts get-caller-identity 
+
+                  # The role ARN to assume
+                  echo "Assuming role: $ROLE_ARN"
+
+                  # Get temporary credentials
+                  CREDENTIALS=$(aws sts assume-role \
+                      --role-arn $ROLE_ARN \
+                      --region ${REGION} \
+                      --role-session-name "{{ include "ecrCronjob.name" . }}-cronjob" \
+                      --duration-seconds 900)
+
+                  # Extract the credentials from the JSON response
+                  export AWS_ACCESS_KEY_ID=$(echo "$CREDENTIALS" | grep -o   '"AccessKeyId": "[^"]*"' | awk -F'"' '{print $4}')
+                  export AWS_SECRET_ACCESS_KEY=$(echo "$CREDENTIALS" | grep -o   '"SecretAccessKey": "[^"]*"' | awk -F'"' '{print $4}')
+                  export AWS_SESSION_TOKEN=$(echo "$CREDENTIALS" | grep -o '"SessionToken": "[^"]*"' | awk -F'"' '{print $4}')
+    
+
+                  # Optionally, verify the credentials worked
+                  echo "Assumed identity:"
+                  aws sts get-caller-identity
+
+                  # Print success message
+                  echo "Successfully assumed role(will expire in 15 mins): $ROLE_ARN"
+
+                  echo "Getting the ECR token and saving it."
+                  aws ecr get-login-password --region ${REGION} > /token/ecr-token
+              volumeMounts:
+                - name: token
+                  mountPath: /token
+
+          containers:
+            - name: create-secret
+              image: bitnami/kubectl
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: ECR_REGISTRY
+                  value: {{ $awsConfig.ecrRegistry | quote }}
+              command:
+                - /bin/bash
+                - -ce
+                - |
+                  cat <<EOF | kubectl apply -f -
+                  apiVersion: v1
+                  kind: Secret
+                  metadata:
+                    name: {{ include "ecrCronjob.name" $awsConfig }}-token
+                    namespace: {{ include "namespace" $ }}
+                    labels:
+                      argocd.argoproj.io/secret-type: repository
+                  stringData:
+                    username: AWS
+                    password: $(cat /token/ecr-token)
+                    enableOCI: "true"
+                    name: "ECR {{ $awsConfig.clusterName }}"
+                    type: helm
+                    url: ${ECR_REGISTRY}
+                  EOF
+
+              volumeMounts:
+                - name: token
+                  mountPath: /token
+{{- end }} {{/* end of range loop */}}
