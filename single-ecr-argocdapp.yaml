@@ -1,0 +1,31 @@
+# IAM keys are not in git. After the Application exists:
+#   argocd app set single-ecr-token-renewer \
+#     -p aws_access_key_id_base64='<base64 access key id>' \
+#     -p aws_secret_access_key_base64='<base64 secret access key>'
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: single-ecr-token-renewer
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/hepapi/ecr-token-renewer-cronjob
+    targetRevision: main
+    path: single-ecr-helm-chart
+    helm:
+      releaseName: single-ecr-token-renewer
+  destination:
+    # Same cluster name as the existing ecr-token-renewer-cronjob-test app.
+    # Repository Secrets must live in the Argo CD namespace.
+    name: in-cluster
+    namespace: argocd
+  revisionHistoryLimit: 3
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+      - PrunePropagationPolicy=foreground
