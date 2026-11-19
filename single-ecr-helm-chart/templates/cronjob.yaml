@@ -2,8 +2,8 @@
 {{- fail "repositories must contain at least one entry" }}
 {{- end }}
 {{- range .Values.repositories }}
-{{- if or (not .name) (not .path) }}
-{{- fail "each repository needs name and path" }}
+{{- if not .name }}
+{{- fail "each repository needs name" }}
 {{- end }}
 {{- end }}
 apiVersion: batch/v1
@@ -104,7 +104,7 @@ spec:
                     --from-literal=enableOCI=true \
                     --from-literal={{ printf "name=%s" $repo.name | quote }} \
                     --from-literal=type=helm \
-                    --from-literal={{ printf "url=%s/%s" $.Values.ecrRegistry $repo.path | quote }} \
+                    --from-literal={{ printf "url=%s" (ternary (printf "%s/%s" $.Values.ecrRegistry $repo.path) $.Values.ecrRegistry (ne $repo.path "")) | quote }} \
                     --dry-run=client -o yaml \
                   | kubectl label --local -f - \
                     argocd.argoproj.io/secret-type=repository \
